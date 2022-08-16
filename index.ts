@@ -1,7 +1,11 @@
 import { CANCEL } from "bdsx/common";
 import { events } from "bdsx/event";
 import { bedrockServer } from "bdsx/launcher";
+import { command } from "bdsx/command";
 import * as colors from "colors";
+import { Command, CommandPermissionLevel, CommandPositionFloat } from "bdsx/bds/command";
+import { int32_t } from "bdsx/nativetype";
+import { Block } from "bdsx/bds/block";
 
 // const ProgressBar:{new():{},render():void,terminate():void,tick():void,update(n:number):void} = require('progress');
 
@@ -178,13 +182,8 @@ export class Structure {
     }
 }
 
-export function generateMaze(
-    sizeX: number,
-    height: number,
-    sizeZ: number,
-    blockId: string | ((x: number, y: number, z: number) => string),
-    pathWidth: number,
-): Structure {
+export function generateMaze(sizeX: number, height: number, sizeZ: number, block: Block, pathWidth: number): Structure {
+    const blockId = block.getName();
     const pathWidth_1 = pathWidth + 1;
     const xcount = Math.max(((sizeX - 1) / pathWidth_1) | 0, 1) - 1;
     const ycount = Math.max(((sizeZ - 1) / pathWidth_1) | 0, 1) - 1;
@@ -359,44 +358,36 @@ export function generateMaze(
 
     return structure;
 }
+bedrockServer.afterOpen().then(() => {
+    command.register("maze", "maze-generator", CommandPermissionLevel.Operator).overload(
+        (p, o, op) => {
+            try {
+                const pos = p.position.getBlockPosition(o);
+                const x = pos.x;
+                const y = pos.y;
+                const z = pos.z;
 
-events.command.on((cmd, origin, ctx) => {
-    if (origin !== "Server") return;
-    const args = cmd.split(/\s+/g);
-    if (args[0] !== "/maze") return;
+                console.log("maze-generator: Generating");
+                const structure = generateMaze(p.size_x, p.height, p.size_z, p.block, p.path_width || 1);
+                const failed = structure.generate(x, y, z);
+                if (failed.failed !== 0) {
+                    console.log(colors.red(failed.message));
+                    console.log(colors.red(`maze-generator: Generate Failed x${failed.failed}`));
+                } else console.log("maze-generator: Generated");
+            } catch (err) {
+                console.error(colors.red(err.message));
+                return -1;
+            }
 
-    function number(str: string): number {
-        const n = +str;
-        if (isNaN(n) && (n | 0) !== n) {
-            throw Error(`maze-generator: Invalid integer ${args[1]}. /maze x y z width height blockid [pathWidth]`);
-        }
-        return n;
-    }
-
-    try {
-        const x = number(args[1]);
-        const y = number(args[2]);
-        const z = number(args[3]);
-        const sizeX = number(args[4]);
-        const height = number(args[5]);
-        const sizeZ = number(args[6]);
-        const blockid = args[7];
-        if (typeof blockid !== "string") {
-            throw Error(`maze-generator: need 6th parameter. /maze x y z sizeX height sizeZ blockid [pathWidth]`);
-        }
-        const pathWidth = args[8] && number(args[8]);
-
-        console.log("maze-generator: Generating");
-        const structure = generateMaze(sizeX, height, sizeZ, blockid, pathWidth || 1);
-        const failed = structure.generate(x, y, z);
-        if (failed.failed !== 0) {
-            console.log(colors.red(failed.message));
-            console.log(colors.red(`maze-generator: Generate Failed x${failed.failed}`));
-        } else console.log("maze-generator: Generated");
-    } catch (err) {
-        console.error(colors.red(err.message));
-        return -1;
-    }
-
-    return 0;
+            return 0;
+        },
+        {
+            position: CommandPositionFloat,
+            size_x: int32_t,
+            height: int32_t,
+            size_z: int32_t,
+            block: Command.Block,
+            path_width: [int32_t, true],
+        },
+    );
 });
